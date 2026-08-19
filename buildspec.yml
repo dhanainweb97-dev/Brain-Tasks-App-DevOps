@@ -1,0 +1,29 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 177989594106.dkr.ecr.ap-south-1.amazonaws.com
+      - export REPOSITORY_URI=177989594106.dkr.ecr.ap-south-1.amazonaws.com/brain-tasks-app
+      - export IMAGE_TAG=$CODEBUILD_BUILD_NUMBER
+      - echo "Image tag is $IMAGE_TAG"
+
+  build:
+    commands:
+      - echo "Building Docker image..."
+      - docker build -t $REPOSITORY_URI:$IMAGE_TAG .
+      - docker tag $REPOSITORY_URI:$IMAGE_TAG $REPOSITORY_URI:latest
+
+  post_build:
+    commands:
+      - echo "Pushing image to Amazon ECR..."
+      - docker push $REPOSITORY_URI:$IMAGE_TAG
+      - docker push $REPOSITORY_URI:latest
+      - echo "Configuring kubectl..."
+      - aws eks update-kubeconfig --region ap-south-1 --name brain-tasks-cluster
+      - echo "Updating Kubernetes deployment..."
+      - kubectl set image deployment/brain-tasks-app brain-tasks-app=$REPOSITORY_URI:$IMAGE_TAG
+      - echo "Waiting for rolling deployment..."
+      - kubectl rollout status deployment/brain-tasks-app --timeout=5m
+      - echo "Deployment completed successfully"
